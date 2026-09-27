@@ -69,7 +69,6 @@ readonly NFT_TABLE=smartdns_guard
 # (Tailscale, many VPN pools, carrier NAT) and IPv6 ULA.
 readonly DEFAULT_ALLOW=(10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 fc00::/7)
 # Plain DNS (UDP, TCP on truncation). Primaries are queried in parallel on
-# every cache miss; Quad9's 9.9.9.11 forwards EDNS Client Subnet for better CDN
 # mapping. Fallbacks are only used when the primaries fail or time out.
 readonly DEFAULT_UPSTREAMS=(
 	"1.1.1.1"
