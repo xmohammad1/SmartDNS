@@ -18,6 +18,13 @@
 
 Ordinary DNS returns whichever addresses a CDN *guesses* are closest to your resolver. This setup measures instead. It collects candidate addresses from several resolvers, probes each one from the server (the same path your users' connections take), and answers with the fastest. A large persistent cache with prefetch and serve-stale answers peak-hour traffic from memory. Background re-measurement keeps the chosen addresses current.
 
+**Install in one command** on an Ubuntu 22.04 server (see [Quick start](#quick-start) for details):
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/xmohammad1/SmartDNS/main/install-smartdns.sh &&
+  sudo bash install-smartdns.sh
+```
+
 ## Highlights
 
 - **Fastest IP, measured.** Candidates come from parallel upstreams and are latency-probed from the server; the fastest goes first.
@@ -82,18 +89,17 @@ Missing tools (`curl`, `jq`, `dig`, `ss`, `sysctl`, `flock`, `nft` and the CA ce
 
 ## Quick start
 
-Download the script instead of piping it into a shell. You will use the same file later for `--verify`, upgrades and `--uninstall`.
+Run this on the server:
 
 ```bash
-# 1. Download the installer
-curl -fsSLO https://raw.githubusercontent.com/xmohammad1/SmartDNS/main/install-smartdns.sh
-
-# 2. Optional: preview the files it would write (changes nothing)
-sudo bash install-smartdns.sh --dry-run
-
-# 3. Install, configure and verify
-sudo bash install-smartdns.sh
+curl -fsSLO https://raw.githubusercontent.com/xmohammad1/SmartDNS/main/install-smartdns.sh &&
+  sudo bash install-smartdns.sh
 ```
+
+This downloads `install-smartdns.sh` into the current directory and runs it. Keep the file: you will use it later for `--verify`, upgrades and `--uninstall`.
+
+- **Custom settings:** append [options](#usage) to the command, for example `sudo bash install-smartdns.sh --allow 10.8.0.0/24`.
+- **Preview first:** run only the `curl` part, then `sudo bash install-smartdns.sh --dry-run` to see the files it would write without changing anything.
 
 With no options, SmartDNS listens on port 53 on every interface and answers clients on private (RFC 1918), CGNAT and IPv6 ULA networks. It also becomes the server's own resolver. The run ends by testing itself and printing a summary:
 
