@@ -1,46 +1,3 @@
-<h1 align="center">SmartDNS for VPN &amp; Proxy Servers</h1>
-
-<p align="center">
-  A one-command installer that turns an Ubuntu 22.04 VPN or proxy server into a hardened, self-healing
-  DNS resolver that answers every lookup with the fastest IP, measured from the server itself.
-</p>
-
-<p align="center">
-  <img alt="Ubuntu 22.04 LTS" src="https://img.shields.io/badge/Ubuntu-22.04_LTS-E95420?logo=ubuntu&logoColor=white">
-  <img alt="Installer v1.0.0" src="https://img.shields.io/badge/installer-v1.0.0-2ea44f">
-  <img alt="Tested with SmartDNS Release48.4" src="https://img.shields.io/badge/tested_with-SmartDNS_Release48.4-1f6feb">
-  <img alt="Architectures: amd64, arm64, armhf, i386" src="https://img.shields.io/badge/arch-amd64_%7C_arm64_%7C_armhf_%7C_i386-6e7781">
-</p>
-
----
-
-`install-smartdns.sh` installs [SmartDNS](https://github.com/pymumu/smartdns) from its official releases and tunes it for servers whose clients reach the internet *through* the server: WireGuard, OpenVPN and IPsec gateways, Tailscale exit nodes, Xray and sing-box nodes. It is built for servers with thousands of concurrent clients.
-
-Ordinary DNS returns whichever addresses a CDN *guesses* are closest to your resolver. This setup measures instead. It collects candidate addresses from several resolvers, probes each one from the server (the same path your users' connections take), and answers with the fastest. A large persistent cache with prefetch and serve-stale answers peak-hour traffic from memory. Background re-measurement keeps the chosen addresses current.
-
-## Highlights
-
-- **Fastest IP, measured.** Candidates come from parallel upstreams and are latency-probed from the server; the fastest goes first.
-- **Instant under load.** A cache sized from RAM, persisted to disk, with prefetch and serve-stale. Restarts come back warm.
-- **Never an open resolver.** A SmartDNS ACL plus a kernel-level nftables guard, with optional per-client rate limiting.
-- **Hardened.** Unprivileged runtime user, systemd sandbox, SHA-256-verified packages, no query logging by default.
-- **Safe to re-run.** Transactional with automatic rollback, idempotent, and previewable with `--dry-run`.
-- **Self-healing.** Restarted on crash, plus a 30-second liveness watchdog for hangs. `--verify` checks health on demand.
-- **Seamless cut-over.** SmartDNS takes over `127.0.0.53`, so the host and host-network containers switch to it without a restart.
-
-## Contents
-
-- [How it works](#how-it-works)
-- [Requirements](#requirements)
-- [Quick start](#quick-start)
-- [Usage](#usage)
-- [Examples](#examples)
-- [Configuration](#configuration)
-- [Security](#security)
-- [Operations](#operations)
-- [Uninstall](#uninstall)
-- [Troubleshooting](#troubleshooting)
-- [Acknowledgements](#acknowledgements)
 
 ## How it works
 
@@ -82,18 +39,17 @@ Missing tools (`curl`, `jq`, `dig`, `ss`, `sysctl`, `flock`, `nft` and the CA ce
 
 ## Quick start
 
-Download the script instead of piping it into a shell. You will use the same file later for `--verify`, upgrades and `--uninstall`.
+Run this on the server:
 
 ```bash
-# 1. Download the installer
-curl -fsSLO https://raw.githubusercontent.com/xmohammad1/SmartDNS/main/install-smartdns.sh
-
-# 2. Optional: preview the files it would write (changes nothing)
-sudo bash install-smartdns.sh --dry-run
-
-# 3. Install, configure and verify
-sudo bash install-smartdns.sh
+curl -fsSLO https://raw.githubusercontent.com/xmohammad1/SmartDNS/main/install-smartdns.sh &&
+  sudo bash install-smartdns.sh
 ```
+
+This downloads `install-smartdns.sh` into the current directory and runs it. Keep the file: you will use it later for `--verify`, upgrades and `--uninstall`.
+
+- **Custom settings:** append [options](#usage) to the command, for example `sudo bash install-smartdns.sh --allow 10.8.0.0/24`.
+- **Preview first:** run only the `curl` part, then `sudo bash install-smartdns.sh --dry-run` to see the files it would write without changing anything.
 
 With no options, SmartDNS listens on port 53 on every interface and answers clients on private (RFC 1918), CGNAT and IPv6 ULA networks. It also becomes the server's own resolver. The run ends by testing itself and printing a summary:
 
@@ -292,132 +248,3 @@ These are not exposed as options. Override them in `conf.d` if you need to.
 ### Automatic sizing
 
 The cache holds 32 entries per MiB of RAM, between 32,768 and 1,048,576 entries (about 0.5 KiB each). When connection tracking is loaded, `nf_conntrack_max` is raised, if lower, to 64 per MiB of RAM, between 262,144 and 4,194,304, with a quarter as many hash buckets. Both are computed from `MemTotal`, so a "4 GB" server that reports slightly less gets a slightly smaller figure.
-
-| RAM | Cache entries | `nf_conntrack_max` |
-|---|---|---|
-| 1 GiB or less | 32,768 | 262,144 |
-| 2 GiB | 65,536 | 262,144 |
-| 4 GiB | 131,072 | 262,144 |
-| 8 GiB | 262,144 | 524,288 |
-| 16 GiB | 524,288 | 1,048,576 |
-| 32 GiB | 1,048,576 | 2,097,152 |
-| 64 GiB or more | 1,048,576 | 4,194,304 |
-
-### Kernel tuning
-
-Kernel tuning is **raise-only**. A limit that is already higher, for example one tuned for your VPN, is kept. Only values the installer actually raised are persisted, in `/etc/sysctl.d/99-zz-smartdns.conf`. Skip all of it with `--no-kernel-tuning`.
-
-| Parameter | Target | Purpose |
-|---|---|---|
-| `net.core.rmem_max`, `net.core.wmem_max` | 16 MiB | Lets the 4 MiB socket buffers take full effect |
-| `net.core.netdev_max_backlog` | 16,384 | A deeper NIC-to-kernel queue at high packet rates |
-| `net.netfilter.nf_conntrack_max` and hash size | See [automatic sizing](#automatic-sizing) | Connection-tracking headroom for many clients; the conntrack module is loaded early at boot so the setting applies |
-| `net.ipv4.ip_nonlocal_bind`, `net.ipv6.ip_nonlocal_bind` | `1` | Only with `--listen`: bind tunnel addresses before the tunnel is up |
-
-When connection tracking is active, the nftables guard also exempts loopback DNS from it. Thousands of one-packet local UDP exchanges per second (from the host and local proxy cores) would otherwise churn the conntrack table.
-
-### Files and services
-
-<details>
-<summary>Everything the installer creates or manages</summary>
-
-| Path | Purpose |
-|---|---|
-| `/etc/smartdns/smartdns.conf` | Generated configuration, rewritten on every run |
-| `/etc/smartdns/conf.d/*.conf` | Your local overrides. The installer creates `00-local.conf` if it is missing and otherwise leaves this directory alone |
-| `/etc/smartdns/guard.nft` | nftables guard ruleset |
-| `/etc/systemd/system/smartdns.service.d/10-vpn-tuning.conf` | Service drop-in: restart policy, scheduling priority, sandbox |
-| `/etc/systemd/system/smartdns-guard.service` | Loads the guard at boot, before the network comes up |
-| `/usr/local/sbin/smartdns-healthcheck` | Liveness probe script |
-| `/etc/systemd/system/smartdns-healthcheck.{service,timer}` | Runs the probe every 30 seconds |
-| `/etc/systemd/resolved.conf.d/90-smartdns.conf` | Port 53 with systemd-resolved: turns off its stub listener and forwards to SmartDNS |
-| `/etc/resolv.conf` | Replaced with `nameserver 127.0.0.1` only when systemd-resolved does not manage it. The original is kept for `--uninstall` |
-| `/etc/sysctl.d/99-zz-smartdns.conf` | Kernel limits the installer raised |
-| `/etc/modprobe.d/smartdns-conntrack.conf`<br>`/etc/modules-load.d/smartdns-conntrack.conf` | Conntrack hash size, and early loading of the module at boot |
-| `/var/lib/smartdns/` | Persistent cache |
-| `/var/log/smartdns/` | SmartDNS log, plus the audit log with `--audit` |
-| `/var/log/smartdns-installer.log` | Installer log |
-| `/var/backups/smartdns-installer/<timestamp>/` | Copies of every file the installer replaced |
-| `/var/lib/smartdns-installer/state` | State used by `--verify` and `--uninstall` |
-
-The `smartdns` package provides `/usr/sbin/smartdns` and `smartdns.service`. The daemon runs as the `smartdns` system user.
-
-</details>
-
-## Security
-
-| Layer | What it does |
-|---|---|
-| SmartDNS ACL | Answers only the allowed networks, loopback and the server's own addresses. Everyone else gets `REFUSED`. |
-| nftables guard | A separate `inet smartdns_guard` table drops DNS from disallowed sources in the kernel, before SmartDNS sees it, so the server cannot be used as a DDoS amplifier. It matches only the DNS port and leaves every other firewall rule alone. It is validated with `nft -c` before installation and loaded at boot before the network comes up. |
-| ufw | When ufw is active, adds a rule allowing the DNS port from each allowed network (commented `SmartDNS clients`). `--uninstall` removes them. |
-| Rate limiting | Optional per-client query limit (`--rate-limit`). |
-| Least privilege | SmartDNS drops to the unprivileged `smartdns` user right after start-up. The systemd drop-in adds a capability bounding set, `NoNewPrivileges`, `ProtectSystem=full`, `ProtectHome`, `PrivateTmp`, `PrivateDevices`, `MemoryDenyWriteExecute`, kernel and namespace protections, and an address-family allow-list. |
-| Supply chain | Packages come from the official `pymumu/smartdns` GitHub releases. Each download is checked against the SHA-256 digest GitHub publishes for it (the installer warns if none is published) and must identify as the `smartdns` package. |
-| Privacy | No per-query logging unless you pass `--audit`. Log files are not world-readable. |
-
-If the kernel rejects the guard (as in some restricted containers), the installer warns and relies on the SmartDNS ACL alone.
-
-## Operations
-
-### Health check
-
-```bash
-sudo bash install-smartdns.sh --verify
-```
-
-This checks that SmartDNS is running and answering locally, that the upstream resolvers respond, and that UDP and TCP lookups work. On port 53 it also checks that the host's resolver goes through SmartDNS. It then reports whether the nftables guard and the watchdog are active, and shows recent warnings from the SmartDNS log. The command exits non-zero when a resolver check fails, so you can call it from monitoring or cron.
-
-### Everyday commands
-
-```bash
-systemctl status smartdns                         # service state
-sudo journalctl -u smartdns -f                    # service journal
-sudo tail -f /var/log/smartdns/smartdns.log       # SmartDNS log
-sudo journalctl -t smartdns-healthcheck           # restarts triggered by the watchdog
-sudo nft list table inet smartdns_guard           # guard rules and drop counters
-dig @10.8.0.1 www.google.com                      # test from a VPN client
-```
-
-Crashes are handled by `Restart=always`. The watchdog handles hangs: every 30 seconds it queries SmartDNS for a locally answered name, and restarts the service after three failed attempts. SmartDNS also runs with a higher scheduling priority (`Nice=-5`) and is less likely to be picked by the OOM killer (`OOMScoreAdjust=-500`).
-
-### Upgrades and configuration changes
-
-Re-run the installer with your full set of options. It installs the latest SmartDNS release (or the one given with `--release`), regenerates the configuration and backs up every file it replaces. SmartDNS restarts only if its package or configuration changed. Your `conf.d` overrides are kept. To update the installer itself, download it again first.
-
-### Backups and rollback
-
-Before replacing any file, the installer copies it to `/var/backups/smartdns-installer/<timestamp>/` under its original path. If a run fails after it starts changing the system, including when the final health checks fail, it rolls itself back:
-
-- replaced files are restored and new files removed
-- newly enabled units are disabled and ufw rules it added are deleted
-- systemd-resolved is restarted and a previously running SmartDNS is started again
-
-Every step is recorded in `/var/log/smartdns-installer.log`.
-
-## Uninstall
-
-```bash
-sudo bash install-smartdns.sh --uninstall           # keep configuration, cache and logs
-sudo bash install-smartdns.sh --uninstall --purge   # also delete them, and the smartdns user
-```
-
-Uninstalling stops and disables every SmartDNS unit and removes the nftables guard, the unit files and the tuning files. It restores the systemd-resolved stub listener or the original `/etc/resolv.conf`, deletes the ufw rules it added and removes the package. Raised kernel limits stay in effect until the next reboot. Backups and the installer log are kept.
-
-## Troubleshooting
-
-| Symptom | What to do |
-|---|---|
-| `Port 53 is already in use` | Another DNS service (dnsmasq, bind9, unbound, a container, …) holds the port. Stop it, or bind SmartDNS to specific addresses with `--listen`. systemd-resolved is handled automatically. |
-| `Cannot query GitHub` | The GitHub API is rate-limited or unreachable. Set `GITHUB_TOKEN`, or install from a local package with `--deb`. |
-| `Upstream resolvers do not answer` | Outbound DNS to the upstreams is blocked. Allow UDP/TCP 53 outbound, or use encrypted upstreams such as `--upstream https://1.1.1.1/dns-query`. The failed run has already been rolled back. |
-| `nftables rejected the guard ruleset` | Common in restricted containers. Installation continues and the SmartDNS ACL still refuses unknown clients. Pass `--no-firewall` to skip the guard. |
-| Clients time out, but the server itself resolves | Make sure the client's address is inside `--allow`; the guard silently drops everyone else. Also check that the host firewall admits port 53 from the tunnel. With ufw active the installer adds the rules itself. With an iptables `INPUT` policy of `DROP`, it prints the rule to add, for example `iptables -I INPUT -i wg0 -p udp --dport 53 -j ACCEPT` (add the same for TCP). |
-| `/etc/resolv.conf` keeps being overwritten | NetworkManager or resolvconf manages it on this host. Configure it to use `127.0.0.1`. |
-| The installer refuses to run on your OS | It targets Ubuntu 22.04. Pass `--force` to try anyway. |
-
-For anything else, start with `/var/log/smartdns-installer.log`, `sudo journalctl -u smartdns` and `/var/log/smartdns/smartdns.log`. For a more verbose SmartDNS log, add `--log-level info` (or `debug`) to your usual install command and re-run it.
-
-## Acknowledgements
-
-[SmartDNS](https://github.com/pymumu/smartdns) is developed by [pymumu](https://github.com/pymumu) and contributors. This project is an independent installer that deploys the official, unmodified SmartDNS release packages.
